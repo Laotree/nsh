@@ -1,4 +1,5 @@
 name: Rust application
+# Verification baseline: this branch differs from the base by this comment only.
 
 on:
   # Pull requests test every change before it merges; main runs every three
