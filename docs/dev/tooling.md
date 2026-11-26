@@ -1285,7 +1285,9 @@ the Linux runs of Core, Compat, Examples, TUI, Rust application's `check` and GP
 `gpui-gallery` stay on GitHub's runners: the examples' tests in windows run in real time, and on the slower machines
 they time out waiting for what they press. The `examples` jobs run the TSX examples' tests beside the lints and unit
 tests, in a job of their own, because they spend minutes building what they run; the two examples with Rust crates
-stay in `check`, where those steps already built their hosts. So do the jobs that drive a browser (Rust application's `web`, Website). Pull requests from forks and the scheduled runs
+stay in `check`, where those steps already built their hosts. Rust application's `web` job publishes the web runtimes and
+`web-tests` tests them, beside each other: each builds the command line once, and the workflow waits for the longer of
+the two. So do the jobs that drive a browser (Rust application's `web`, Website). Pull requests from forks and the scheduled runs
 on `main` run every check on GitHub's runners. The release (its builds, `Plan`, `Release` and `Nightly`), the crates'
 publication, the Homebrew formula's update and the website's deployment run only on GitHub's runners: the jobs that
 hold write tokens or decide and build what users download run on fresh machines.

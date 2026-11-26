@@ -152,7 +152,9 @@ jobs:
           fi
 
   # The same crate compiled into the app's own web runtime: `nsh package
-  # --target web` builds it for wasm32 and publishes the site.
+  # --target web` builds it for wasm32 and publishes the site. The runtime's
+  # tests run in `web-tests`, beside this job: each job builds the command
+  # line once, and the workflow waits for the longer of the two.
   web:
     needs: changed
     # Nothing for drafts or a pull request being closed, nor for a scheduled
@@ -203,6 +205,54 @@ jobs:
             echo "The Rust app's web runtime unexpectedly carries JS"
             exit 1
           fi
+      - name: Publish a TSX app with a Rust crate for the web
+        run: |
+          # A TSX entry runs in the browser; the app's Rust UI set is
+          # compiled into its browser-only runtime.
+          ./target/debug/nsh package examples/rust-exports --target web -o target/rust-exports-web
+          site="target/rust-exports-web/Rust Exports"
+          ls "$site"/app.*.js
+          node crates/nsh-platform-web/web/browser/package-size.mjs "$site" --require-browser
+          grep -q rust-exports/native "$site"/nsh.*.wasm
+
+  # The web runtime's tests: the examples headless, the Rust app's programs
+  # and dependency graphs, and Chrome's own input on main's runs. They run
+  # beside `web`, on a machine of their own: the headless tests are most of
+  # what a pull request waits for, and the publish above does not depend on
+  # them.
+  web-tests:
+    needs: changed
+    # Nothing for drafts or a pull request being closed, nor for a scheduled
+    # run when main has not changed since the last one.
+    if: ${{ !cancelled() && needs.changed.outputs.run != 'false' && (github.event_name != 'pull_request' || (github.event.action != 'closed' && !github.event.pull_request.draft)) }}
+    # Debounce (AGENTS.md "CI"): waits without a runner, so a newer
+    # push cancels this run before it takes one.
+    environment:
+      name: ci-debounce
+      deployment: false
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+      - name: Set up temporary files
+        run: |
+          mkdir -p "$RUNNER_TEMP/nsh-test-tmp"
+          echo "TMPDIR=$RUNNER_TEMP/nsh-test-tmp" >> "$GITHUB_ENV"
+      # QuickJS is C: bindgen needs libclang for the CLI; the describe
+      # program links the gallery's crate, whose native entry (`cargo run`)
+      # uses GTK 4. `--target web` runs the browser's runtime, wasm32.
+      - name: Install clang, LLVM, GTK 4, WebKitGTK and GStreamer
+        run: sudo apt-get update && sudo apt-get install -y clang llvm libclang-dev libgtk-4-dev libwebkitgtk-6.0-dev
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      # huacnlee/cargo, and the dependencies' builds: main's runs save
+      # them, pull requests restore them.
+      - name: Cargo
+        uses: ./.github/actions/cargo
+        with:
+          cache: rust-app-web
+      - name: Build the command line
+        run: cargo build -p nsh-cli --locked
       - name: Test the Rust app and check that it builds no JS engine, bundler or WebKitGTK
         run: |
           # `nsh` describes the app's crates with the generated `describe`
@@ -266,12 +316,3 @@ jobs:
           ./target/debug/nsh test examples/rust-exports/App.test.tsx --target web
           ./target/debug/nsh test examples/gallery-rs/App.test.tsx --target web
           ./target/debug/nsh test examples/gallery-rs/shortcuts.test.tsx --target web
-      - name: Publish a TSX app with a Rust crate for the web
-        run: |
-          # A TSX entry runs in the browser; the app's Rust UI set is
-          # compiled into its browser-only runtime.
-          ./target/debug/nsh package examples/rust-exports --target web -o target/rust-exports-web
-          site="target/rust-exports-web/Rust Exports"
-          ls "$site"/app.*.js
-          node crates/nsh-platform-web/web/browser/package-size.mjs "$site" --require-browser
-          grep -q rust-exports/native "$site"/nsh.*.wasm
